@@ -51,7 +51,7 @@
 <div class="container">
     <h1>📱 Lectura de Cédula</h1>
     
-    <form hx-post="/lectura-nfc/procesar" hx-swap="none">
+    <form id="lectura-nfc-form" hx-post="/lectura-nfc/procesar" hx-swap="none">
         <div class="nfc-container">
             <div class="nfc-icon">📲</div>
             <p>Acerca la cédula de identidad al lector</p>
@@ -148,7 +148,11 @@
 
 <script>
     document.body.addEventListener('htmx:afterRequest', function(event) {
-        if (event.detail.xhr.status === 200) {
+        if (
+            event.detail.elt &&
+            event.detail.elt.id === 'lectura-nfc-form' &&
+            event.detail.xhr.status === 200
+        ) {
             alert('Visita registrada exitosamente');
             window.location.href = '/dashboard';
         }
