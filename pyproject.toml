@@ -11,7 +11,8 @@ dependencies = [
   "pyscard",
   "pycryptodome",
   "jinja2",
-  "python-jose",
+  "python-jose[cryptography]",
+  "passlib[bcrypt]",
 ]
 
 [dependency-groups]
