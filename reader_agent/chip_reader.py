@@ -2,11 +2,15 @@
 import logging
 from dataclasses import dataclass
 
-from smartcard.CardMonitoring import CardMonitor, CardObserver
-from smartcard.CardType import AnyCardType
-from smartcard.Exceptions import CardConnectionException, SmartcardException
-from smartcard.System import readers
-from smartcard.util import toHexString
+try:
+    from smartcard.Exceptions import CardConnectionException, SmartcardException
+    from smartcard.System import readers
+except ModuleNotFoundError as import_error:
+    CardConnectionException = SmartcardException = Exception
+    readers = None
+    _SMARTCARD_IMPORT_ERROR = import_error
+else:
+    _SMARTCARD_IMPORT_ERROR = None
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +40,10 @@ class ACR122UReader:
         Returns:
             True if reader found, False otherwise
         """
+        if _SMARTCARD_IMPORT_ERROR is not None or readers is None:
+            logger.warning("pyscard is not installed; NFC reader support is unavailable.")
+            return False
+
         try:
             available_readers = readers()
             if not available_readers:
@@ -71,12 +79,13 @@ class ACR122UReader:
             logger.error("No reader detected. Call detect_reader() first.")
             return False
 
-        try:
-            from smartcard.CardRequest import CardRequest
+        if _SMARTCARD_IMPORT_ERROR is not None:
+            logger.error("Cannot connect to card because pyscard is not installed.")
+            return False
 
-            request = CardRequest(timeout=5, cardType=AnyCardType())
-            card_service = request.waitforcard()
-            self.connection = card_service.connection
+        try:
+            self.connection = self.reader.createConnection()
+            self.connection.connect()
             logger.info("Connected to card.")
             return True
 

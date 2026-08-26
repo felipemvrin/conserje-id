@@ -1,7 +1,9 @@
 """Tests for reader_agent module."""
 import pytest
 
+from reader_agent import chip_reader
 from reader_agent.bac import BACKey
+from reader_agent.chip_reader import ACR122UReader
 from reader_agent.service import (
     BACFailedException,
     CardNotDetectedException,
@@ -27,10 +29,8 @@ class TestBACKey:
         """Test MRZ data formatting."""
         bac = BACKey("12345678", "010190", "010230")
         mrz = bac._format_mrz_data()
-        assert len(mrz) == 25  # RUN(8) + DOB(6) + EXP(6) + checksum(1) = 21
-        # Actually: 8 + 6 + 6 + 1 = 21, but let's check what we got
-        assert mrz.startswith("12345678")
-        assert mrz.endswith(bac._mrz_checksum(mrz[:-1]))
+        assert mrz == "123456780101900102309"
+        assert len(mrz) == 21
 
     def test_derive_key_material(self) -> None:
         """Test encryption and MAC key derivation."""
@@ -52,6 +52,42 @@ class TestBACKey:
 
 class TestReaderService:
     """Test high-level reader service (mocked hardware)."""
+
+    def test_detect_reader_without_pyscard(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Reader detection should fail cleanly when pyscard is unavailable."""
+        monkeypatch.setattr(
+            chip_reader,
+            "_SMARTCARD_IMPORT_ERROR",
+            ModuleNotFoundError("smartcard"),
+        )
+        monkeypatch.setattr(chip_reader, "readers", None)
+
+        assert ACR122UReader().detect_reader() is False
+
+    def test_connect_uses_detected_reader(self) -> None:
+        """Connection should use the reader selected during detection."""
+        original_import_error = chip_reader._SMARTCARD_IMPORT_ERROR
+
+        class FakeConnection:
+            def connect(self) -> None:
+                return None
+
+            def disconnect(self) -> None:
+                return None
+
+        class FakeReader:
+            def createConnection(self) -> FakeConnection:
+                return FakeConnection()
+
+        reader = ACR122UReader()
+        reader.reader = FakeReader()
+        chip_reader._SMARTCARD_IMPORT_ERROR = None
+
+        try:
+            assert reader.connect() is True
+            assert reader.connection is not None
+        finally:
+            chip_reader._SMARTCARD_IMPORT_ERROR = original_import_error
 
     @pytest.mark.skip(reason="Requires physical ACR122U reader")
     def test_leer_cedula_success(self) -> None:
@@ -92,3 +128,22 @@ class TestReaderService:
         assert datos.run == "12345678"
         assert datos.nombre_completo == "Juan Pérez"
         assert datos.foto_bytes is None
+
+    def test_leer_cedula_masks_run_in_logs(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Service logs should not include full RUN or birth/expiry dates."""
+        reader = ACR122UReader()
+        monkeypatch.setattr("reader_agent.service.ACR122UReader", lambda: reader)
+        monkeypatch.setattr(reader, "detect_reader", lambda: False)
+
+        with caplog.at_level("INFO"):
+            with pytest.raises(ReaderNotDetectedException):
+                leer_cedula("12.345.678-5", "010190", "010230")
+
+        messages = " ".join(record.getMessage() for record in caplog.records)
+        assert "12.345.678-5" not in messages
+        assert "123456785" not in messages
+        assert "010190" not in messages
+        assert "010230" not in messages
+        assert "*****6785" in messages

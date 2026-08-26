@@ -48,6 +48,14 @@ class DatosCedula:
     foto_bytes: bytes | None = None
 
 
+def _mask_run(run: str) -> str:
+    """Mask a RUN before sending it to logs."""
+    normalized_run = run.replace("-", "").replace(".", "").strip()
+    if len(normalized_run) <= 4:
+        return "*" * len(normalized_run)
+    return f"{'*' * (len(normalized_run) - 4)}{normalized_run[-4:]}"
+
+
 def leer_cedula(
     run: str, fecha_nacimiento: str, fecha_vencimiento: str
 ) -> DatosCedula:
@@ -70,10 +78,7 @@ def leer_cedula(
         BACFailedException: If BAC handshake fails
         InvalidCardException: If card is not a valid ICAO 9303 chip
     """
-    logger.info(
-        f"Iniciando lectura de cedula: RUN={run}, "
-        f"DOB={fecha_nacimiento}, EXP={fecha_vencimiento}"
-    )
+    logger.info("Iniciando lectura de cedula para RUN=%s", _mask_run(run))
 
     reader = ACR122UReader()
 
@@ -113,7 +118,7 @@ def leer_cedula(
         # DG2: 0x0102 (photo/biometric)
         chip_data = _read_chip_data(reader, run, fecha_nacimiento)
 
-        logger.info(f"Lectura exitosa: {chip_data.nombre_completo}")
+        logger.info("Lectura exitosa para RUN=%s", _mask_run(chip_data.run))
 
         return DatosCedula(
             run=chip_data.run,

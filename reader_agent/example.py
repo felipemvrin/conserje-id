@@ -4,7 +4,6 @@ import logging
 from reader_agent.service import (
     BACFailedException,
     CardNotDetectedException,
-    DatosCedula,
     InvalidCardException,
     ReaderNotDetectedException,
     leer_cedula,
@@ -29,7 +28,7 @@ def main() -> None:
         datos = leer_cedula(run, fecha_nacimiento, fecha_vencimiento)
 
         # Use extracted data
-        logger.info(f"Success! Extracted data:")
+        logger.info("Success! Extracted data:")
         logger.info(f"  RUN: {datos.run}")
         logger.info(f"  Name: {datos.nombre_completo}")
         logger.info(f"  DOB: {datos.fecha_nacimiento}")

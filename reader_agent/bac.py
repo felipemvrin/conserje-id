@@ -1,10 +1,7 @@
 """BAC (Basic Access Control) implementation for ICAO 9303 chips."""
 import hashlib
-import hmac
-from datetime import datetime
 
 from Crypto.Cipher import DES3
-from Crypto.Random import get_random_bytes
 
 
 class BACKey:
