@@ -9,6 +9,7 @@ from app.config import get_db
 from app.main import app
 from app.models import Base, Conserje, Departamento, Residente
 from app.security import hash_password
+from reader_agent.service import DatosCedula
 
 # Use in-memory SQLite for testing
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -198,6 +199,60 @@ class TestVisitas:
             == "Resident does not belong to the specified department"
         )
 
+    def test_registrar_visita_desde_formulario_htmx(
+        self,
+        auth_headers: dict[str, str],
+        test_departamento: Departamento,
+        test_residente: Residente,
+    ):
+        """HTMX form-urlencoded payload should be accepted by visits API."""
+        response = client.post(
+            "/api/visitas/",
+            headers=auth_headers,
+            data={
+                "run_visitante": "11111111",
+                "nombre_visitante": "Juan Pérez",
+                "fecha_nacimiento_visitante": "010190",
+                "departamento_destino_id": str(test_departamento.id),
+                "residente_destino_id": str(test_residente.id),
+                "motivo": "Visita personal",
+                "notas": "Ingreso manual HTMX",
+            },
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["run_visitante"] == "11111111"
+        assert data["residente_destino_id"] == test_residente.id
+
+    def test_registrar_salida_sin_body_desde_htmx(
+        self,
+        auth_headers: dict[str, str],
+        test_departamento: Departamento,
+        test_residente: Residente,
+    ):
+        """Salida endpoint should allow empty body for HTMX button posts."""
+        create_response = client.post(
+            "/api/visitas/",
+            headers=auth_headers,
+            json={
+                "run_visitante": "11111111",
+                "nombre_visitante": "Juan Pérez",
+                "fecha_nacimiento_visitante": "010190",
+                "departamento_destino_id": test_departamento.id,
+                "residente_destino_id": test_residente.id,
+                "motivo": "Visita personal",
+            },
+        )
+        assert create_response.status_code == 201
+        visita_id = create_response.json()["id"]
+
+        salida_response = client.post(
+            f"/api/visitas/{visita_id}/salida",
+            headers=auth_headers,
+        )
+        assert salida_response.status_code == 200
+        assert salida_response.json()["timestamp_salida"] is not None
+
 
 class TestHome:
     """Test home endpoint."""
@@ -236,3 +291,36 @@ class TestNFC:
             response.json()["detail"]
             == "Resident does not belong to the specified department"
         )
+
+    def test_nfc_procesar_htmx_form(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        auth_headers: dict[str, str],
+        test_departamento: Departamento,
+        test_residente: Residente,
+    ):
+        """HTMX NFC form endpoint should be wired and accept form data."""
+        monkeypatch.setattr(
+            "app.router_nfc.leer_cedula",
+            lambda run, fecha_nacimiento, fecha_vencimiento: DatosCedula(
+                run=run,
+                nombre_completo="Visitante NFC",
+                fecha_nacimiento=fecha_nacimiento,
+                foto_bytes=None,
+            ),
+        )
+
+        response = client.post(
+            "/lectura-nfc/procesar",
+            headers=auth_headers,
+            data={
+                "run_visitante": "11111111",
+                "fecha_nacimiento": "010190",
+                "fecha_vencimiento": "010230",
+                "departamento_id": str(test_departamento.id),
+                "residente_id": str(test_residente.id),
+                "motivo": "Visita por NFC",
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["run"] == "11111111"

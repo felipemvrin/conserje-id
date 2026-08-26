@@ -33,6 +33,7 @@ async def home(request: Request) -> HTMLResponse:
 async def login_page(request: Request) -> HTMLResponse:
     """Login page."""
     return templates.TemplateResponse(
+        request,
         "login.html",
         {"request": request},
     )
@@ -50,6 +51,7 @@ async def login_submit(
     conserje = authenticate_conserje(db, rut, password)
     if not conserje:
         return templates.TemplateResponse(
+            request,
             "login.html",
             {
                 "request": request,
@@ -82,6 +84,7 @@ async def dashboard(
         return RedirectResponse(url="/login", status_code=303)
 
     return templates.TemplateResponse(
+        request,
         "dashboard.html",
         {
             "request": request,
@@ -110,6 +113,7 @@ async def lectura_nfc_form(
     residentes = db.query(Residente).filter(Residente.activo == True).all()
 
     return templates.TemplateResponse(
+        request,
         "lectura_nfc.html",
         {
             "request": request,
@@ -178,6 +182,7 @@ async def historial(
     )
 
     return templates.TemplateResponse(
+        request,
         "historial.html",
         {
             "request": request,
@@ -197,6 +202,7 @@ async def registro_manual_form(
     residentes = db.query(Residente).filter(Residente.activo == True).all()
 
     return templates.TemplateResponse(
+        request,
         "registro_manual.html",
         {
             "request": request,
@@ -217,6 +223,7 @@ async def admin_panel(
     residentes = db.query(Residente).all()
 
     return templates.TemplateResponse(
+        request,
         "admin.html",
         {
             "request": request,

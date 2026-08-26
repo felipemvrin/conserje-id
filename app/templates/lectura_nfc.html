@@ -61,6 +61,18 @@
         </div>
         
         <div class="form-group">
+            <label for="run_visitante">RUN Visitante (sin puntos ni guión)</label>
+            <input
+                type="text"
+                id="run_visitante"
+                name="run_visitante"
+                placeholder="12345678"
+                pattern="[0-9]{8}"
+                required
+            />
+        </div>
+
+        <div class="form-group">
             <label for="fecha_nacimiento">Fecha de nacimiento (DDMMYY)</label>
             <input 
                 type="text" 
@@ -133,4 +145,13 @@
         </div>
     </form>
 </div>
+
+<script>
+    document.body.addEventListener('htmx:afterRequest', function(event) {
+        if (event.detail.xhr.status === 200) {
+            alert('Visita registrada exitosamente');
+            window.location.href = '/dashboard';
+        }
+    });
+</script>
 {% endblock %}

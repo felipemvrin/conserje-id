@@ -1,8 +1,9 @@
 """Visit registration and management routes."""
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.config import get_db
@@ -16,6 +17,42 @@ from app.schemas import (
 from app.security import get_current_conserje
 
 router = APIRouter(tags=["visitas"])
+
+
+async def _parse_registro_visita_input(request: Request) -> RegistroVisitaRequest:
+    """Parse visit payload from JSON or form payload (HTMX compatibility)."""
+    content_type = request.headers.get("content-type", "").lower()
+
+    if "application/json" in content_type:
+        raw_payload = await request.json()
+    else:
+        form_data = await request.form()
+        raw_payload = dict(form_data)
+
+    try:
+        return RegistroVisitaRequest(**raw_payload)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=exc.errors(),
+        ) from None
+
+
+def _to_visita_response(visita: Visita) -> VisitaResponse:
+    """Map ORM entity to API schema field names."""
+    return VisitaResponse(
+        id=visita.id,
+        run_visitante=visita.run_visitante,
+        nombre_visitante=visita.nombre_visitante,
+        fecha_nacimiento_visitante=visita.fecha_nacimiento_visitante,
+        departamento_destino_id=visita.departamento_id,
+        residente_destino_id=visita.residente_destino_id,
+        motivo=visita.motivo,
+        timestamp_ingreso=visita.timestamp_ingreso,
+        timestamp_salida=visita.timestamp_salida,
+        notas=visita.notas,
+        creado_en=visita.creado_en,
+    )
 
 
 def _crear_visita(
@@ -76,7 +113,7 @@ def _crear_visita(
 
 @router.post("/api/visitas/", response_model=VisitaResponse, status_code=status.HTTP_201_CREATED)
 async def registrar_visita(
-    request: RegistroVisitaRequest,
+    request: Request,
     conserje: Conserje = Depends(get_current_conserje),
     db: Session = Depends(get_db),
 ) -> VisitaResponse:
@@ -85,41 +122,45 @@ async def registrar_visita(
 
     Requires authentication. Data typically comes from NFC chip reading.
     """
+    payload = await _parse_registro_visita_input(request)
+
     visita = _crear_visita(
         db=db,
         conserje=conserje,
-        run_visitante=request.run_visitante,
-        nombre_visitante=request.nombre_visitante,
-        fecha_nacimiento_visitante=request.fecha_nacimiento_visitante,
-        departamento_id=request.departamento_destino_id,
-        residente_id=request.residente_destino_id,
-        motivo=request.motivo,
-        notas=request.notas,
-        foto_visitante=request.foto_visitante,
+        run_visitante=payload.run_visitante,
+        nombre_visitante=payload.nombre_visitante,
+        fecha_nacimiento_visitante=payload.fecha_nacimiento_visitante,
+        departamento_id=payload.departamento_destino_id,
+        residente_id=payload.residente_destino_id,
+        motivo=payload.motivo,
+        notas=payload.notas,
+        foto_visitante=payload.foto_visitante,
     )
-    return VisitaResponse.from_orm(visita)
+    return _to_visita_response(visita)
 
 
 @router.post("/visitas/", response_model=VisitaResponse, status_code=status.HTTP_201_CREATED)
 async def registrar_visita_legacy(
-    request: RegistroVisitaRequest,
+    request: Request,
     conserje: Conserje = Depends(get_current_conserje),
     db: Session = Depends(get_db),
 ) -> VisitaResponse:
     """Register a new visit (legacy endpoint for compatibility)."""
+    payload = await _parse_registro_visita_input(request)
+
     visita = _crear_visita(
         db=db,
         conserje=conserje,
-        run_visitante=request.run_visitante,
-        nombre_visitante=request.nombre_visitante,
-        fecha_nacimiento_visitante=request.fecha_nacimiento_visitante,
-        departamento_id=request.departamento_destino_id,
-        residente_id=request.residente_destino_id,
-        motivo=request.motivo,
-        notas=request.notas,
-        foto_visitante=request.foto_visitante,
+        run_visitante=payload.run_visitante,
+        nombre_visitante=payload.nombre_visitante,
+        fecha_nacimiento_visitante=payload.fecha_nacimiento_visitante,
+        departamento_id=payload.departamento_destino_id,
+        residente_id=payload.residente_destino_id,
+        motivo=payload.motivo,
+        notas=payload.notas,
+        foto_visitante=payload.foto_visitante,
     )
-    return VisitaResponse.from_orm(visita)
+    return _to_visita_response(visita)
 
 
 @router.get("/api/visitas/", response_model=ListaVisitasResponse)
@@ -150,7 +191,7 @@ async def listar_visitas(
         total=total,
         limite=limite,
         offset=offset,
-        visitas=[VisitaResponse.from_orm(v) for v in visitas],
+        visitas=[_to_visita_response(v) for v in visitas],
     )
 
 
@@ -178,14 +219,14 @@ async def listar_visitas_legacy(
         total=total,
         limite=limite,
         offset=offset,
-        visitas=[VisitaResponse.from_orm(v) for v in visitas],
+        visitas=[_to_visita_response(v) for v in visitas],
     )
 
 
 @router.post("/api/visitas/{visita_id}/salida", response_model=VisitaResponse)
 async def registrar_salida_api(
     visita_id: int,
-    request: RegistrarSalidaRequest,
+    request: RegistrarSalidaRequest | None = Body(default=None),
     conserje: Conserje = Depends(get_current_conserje),
     db: Session = Depends(get_db),
 ) -> VisitaResponse:
@@ -208,19 +249,20 @@ async def registrar_salida_api(
         )
 
     visita.timestamp_salida = datetime.now(timezone.utc)
-    if request.notas_salida:
-        visita.notas = (visita.notas or "") + f"\n[SALIDA] {request.notas_salida}"
+    notas_salida = request.notas_salida if request else None
+    if notas_salida:
+        visita.notas = (visita.notas or "") + f"\n[SALIDA] {notas_salida}"
 
     db.commit()
     db.refresh(visita)
 
-    return VisitaResponse.from_orm(visita)
+    return _to_visita_response(visita)
 
 
 @router.post("/visitas/{visita_id}/salida", response_model=VisitaResponse)
 async def registrar_salida_legacy(
     visita_id: int,
-    request: RegistrarSalidaRequest,
+    request: RegistrarSalidaRequest | None = Body(default=None),
     conserje: Conserje = Depends(get_current_conserje),
     db: Session = Depends(get_db),
 ) -> VisitaResponse:
@@ -239,10 +281,11 @@ async def registrar_salida_legacy(
         )
 
     visita.timestamp_salida = datetime.now(timezone.utc)
-    if request.notas_salida:
-        visita.notas = (visita.notas or "") + f"\n[SALIDA] {request.notas_salida}"
+    notas_salida = request.notas_salida if request else None
+    if notas_salida:
+        visita.notas = (visita.notas or "") + f"\n[SALIDA] {notas_salida}"
 
     db.commit()
     db.refresh(visita)
 
-    return VisitaResponse.from_orm(visita)
+    return _to_visita_response(visita)

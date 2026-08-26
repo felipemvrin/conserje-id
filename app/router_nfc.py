@@ -1,5 +1,5 @@
 """NFC chip reading integration routes."""
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Form, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -40,18 +40,12 @@ class LeerCedulaResponse(BaseModel):
     timestamp_registro: str
 
 
-@router.post("/leer-y-registrar", response_model=LeerCedulaResponse)
-async def leer_cedula_y_registrar_visita(
+def _leer_y_registrar(
     request: LeerCedulaRequest,
-    conserje: Conserje = Depends(get_current_conserje),
-    db: Session = Depends(get_db),
+    conserje: Conserje,
+    db: Session,
 ) -> LeerCedulaResponse:
-    """
-    Read NFC chip and automatically register visit.
-
-    This combines chip reading, validation, and visit registration in one endpoint.
-    Requires valid department and resident.
-    """
+    """Shared NFC read + visit registration flow."""
     # Validate department and resident
     departamento = db.query(Departamento).filter(
         Departamento.id == request.departamento_destino_id
@@ -129,3 +123,47 @@ async def leer_cedula_y_registrar_visita(
         visita_id=visita.id,
         timestamp_registro=visita.timestamp_ingreso.isoformat(),
     )
+
+
+@router.post("/leer-y-registrar", response_model=LeerCedulaResponse)
+async def leer_cedula_y_registrar_visita(
+    request: LeerCedulaRequest,
+    conserje: Conserje = Depends(get_current_conserje),
+    db: Session = Depends(get_db),
+) -> LeerCedulaResponse:
+    """
+    Read NFC chip and automatically register visit.
+
+    This combines chip reading, validation, and visit registration in one endpoint.
+    Requires valid department and resident.
+    """
+    return _leer_y_registrar(
+        request=request,
+        conserje=conserje,
+        db=db,
+    )
+
+
+@router.post("/procesar", response_model=LeerCedulaResponse)
+async def leer_cedula_y_registrar_visita_htmx(
+    run_visitante: str = Form(...),
+    fecha_nacimiento: str = Form(...),
+    fecha_vencimiento: str = Form(...),
+    departamento_id: int = Form(...),
+    residente_id: int = Form(...),
+    motivo: str = Form(...),
+    notas: str | None = Form(default=None),
+    conserje: Conserje = Depends(get_current_conserje),
+    db: Session = Depends(get_db),
+) -> LeerCedulaResponse:
+    """HTMX form endpoint for NFC registration."""
+    request = LeerCedulaRequest(
+        run_visitante=run_visitante,
+        fecha_nacimiento=fecha_nacimiento,
+        fecha_vencimiento=fecha_vencimiento,
+        departamento_destino_id=departamento_id,
+        residente_destino_id=residente_id,
+        motivo=motivo,
+        notas=notas,
+    )
+    return _leer_y_registrar(request=request, conserje=conserje, db=db)

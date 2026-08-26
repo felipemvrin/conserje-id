@@ -22,9 +22,10 @@ app.include_router(nfc_router)
 async def home(request: Request) -> HTMLResponse:
     """API home page with basic info."""
     return templates.TemplateResponse(
-        request=request,
-        name="index.html",
-        context={
+        request,
+        "index.html",
+        {
+            "request": request,
             "app_name": "VisitaRUN",
             "version": "0.1.0",
         },
