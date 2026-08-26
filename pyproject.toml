@@ -1,0 +1,37 @@
+[project]
+name = "visitarun"
+version = "0.1.0"
+description = "Registro de visitas con lectura NFC de cedula chilena"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi",
+  "uvicorn",
+  "sqlalchemy>=2.0",
+  "pyscard",
+  "pycryptodome",
+  "jinja2",
+  "python-jose",
+]
+
+[dependency-groups]
+dev = [
+  "pytest",
+  "ruff",
+  "alembic",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
