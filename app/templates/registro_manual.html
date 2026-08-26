@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}Registro Manual - VisitaRUN{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>✍️ Registro Manual de Visita</h1>
+    
+    <form hx-post="/api/visitas/" hx-swap="none">
+        <div class="form-group">
+            <label for="run_visitante">RUN Visitante (sin puntos)</label>
+            <input 
+                type="text" 
+                id="run_visitante" 
+                name="run_visitante" 
+                placeholder="12345678"
+                pattern="[0-9]{8}"
+                required
+            />
+        </div>
+        
+        <div class="form-group">
+            <label for="nombre_visitante">Nombre completo</label>
+            <input 
+                type="text" 
+                id="nombre_visitante" 
+                name="nombre_visitante" 
+                placeholder="Juan Pérez García"
+                required
+            />
+        </div>
+        
+        <div class="form-group">
+            <label for="fecha_nacimiento_visitante">Fecha de nacimiento (DDMMYY)</label>
+            <input 
+                type="text" 
+                id="fecha_nacimiento_visitante" 
+                name="fecha_nacimiento_visitante" 
+                placeholder="010190"
+                pattern="[0-9]{6}"
+                required
+            />
+        </div>
+        
+        <div class="form-group">
+            <label for="departamento_destino_id">Departamento destino</label>
+            <select id="departamento_destino_id" name="departamento_destino_id" required>
+                <option value="">-- Seleccionar --</option>
+                {% for depto in departamentos %}
+                <option value="{{ depto.id }}">{{ depto.numero }} (Piso {{ depto.piso }})</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="residente_destino_id">Residente</label>
+            <select id="residente_destino_id" name="residente_destino_id" required>
+                <option value="">-- Seleccionar --</option>
+                {% for residente in residentes %}
+                <option value="{{ residente.id }}">{{ residente.nombre_completo }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="motivo">Motivo de visita</label>
+            <input 
+                type="text" 
+                id="motivo" 
+                name="motivo" 
+                placeholder="Ej: Visita familiar, Entrega de paquete"
+                required
+            />
+        </div>
+        
+        <div class="form-group">
+            <label for="notas">Notas adicionales</label>
+            <textarea 
+                id="notas" 
+                name="notas" 
+                placeholder="Información adicional"
+                rows="3"
+            ></textarea>
+        </div>
+        
+        <div style="display: flex; gap: 10px;">
+            <button type="submit" style="flex: 1;">Registrar visita</button>
+            <button type="button" class="btn-secondary" onclick="history.back()" style="flex: 1;">Cancelar</button>
+        </div>
+    </form>
+</div>
+
+<script>
+    document.body.addEventListener('htmx:afterRequest', function(event) {
+        if (event.detail.xhr.status === 201 || event.detail.xhr.status === 200) {
+            alert('Visita registrada exitosamente');
+            window.location.href = '/dashboard';
+        }
+    });
+</script>
+{% endblock %}

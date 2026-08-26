@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}Admin - VisitaRUN{% endblock %}
+
+{% block extra_css %}
+<style>
+    .container {
+        max-width: 1000px;
+    }
+    
+    .admin-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        margin: 20px 0;
+    }
+    
+    .admin-card {
+        background: #f9f9f9;
+        padding: 20px;
+        border-radius: 8px;
+        border-left: 4px solid #667eea;
+    }
+    
+    .admin-card h3 {
+        color: #333;
+        margin-bottom: 10px;
+    }
+    
+    .admin-card .count {
+        font-size: 32px;
+        font-weight: 700;
+        color: #667eea;
+    }
+    
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+    }
+    
+    th, td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #ddd;
+        font-size: 13px;
+    }
+    
+    th {
+        background: #f0f0f0;
+        font-weight: 600;
+        color: #333;
+    }
+    
+    tr:hover {
+        background: #f9f9f9;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>⚙️ Panel de Administración</h1>
+    
+    <div class="admin-grid">
+        <div class="admin-card">
+            <h3>📍 Departamentos</h3>
+            <div class="count">{{ total_departamentos }}</div>
+            <p>Total de departamentos registrados</p>
+        </div>
+        <div class="admin-card">
+            <h3>👥 Residentes</h3>
+            <div class="count">{{ total_residentes }}</div>
+            <p>Total de residentes registrados</p>
+        </div>
+    </div>
+    
+    <h2 style="margin-top: 40px; font-size: 18px; color: #333;">Departamentos</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Número</th>
+                <th>Piso</th>
+                <th>Descripción</th>
+                <th>Estado</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for depto in departamentos %}
+            <tr>
+                <td><strong>{{ depto.numero }}</strong></td>
+                <td>{{ depto.piso }}</td>
+                <td>{{ depto.descripcion or '-' }}</td>
+                <td>{% if depto.activo %}<span style="color: green;">✓ Activo</span>{% else %}<span style="color: red;">✗ Inactivo</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    
+    <h2 style="margin-top: 40px; font-size: 18px; color: #333;">Residentes</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Nombre</th>
+                <th>RUN</th>
+                <th>Departamento</th>
+                <th>Teléfono</th>
+                <th>Estado</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for residente in residentes %}
+            <tr>
+                <td><strong>{{ residente.nombre_completo }}</strong></td>
+                <td>{{ residente.run }}</td>
+                <td>{{ residente.departamento.numero }}</td>
+                <td>{{ residente.telefono or '-' }}</td>
+                <td>{% if residente.activo %}<span style="color: green;">✓ Activo</span>{% else %}<span style="color: red;">✗ Inactivo</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    
+    <div style="margin-top: 20px;">
+        <button class="btn-secondary" onclick="history.back()">Volver</button>
+    </div>
+</div>
+{% endblock %}
