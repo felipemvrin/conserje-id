@@ -1,6 +1,7 @@
 """Security and authentication utilities."""
+import os
+import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -12,7 +13,7 @@ from app.config import get_db
 from app.models import Conserje
 
 # Configuration
-SECRET_KEY = "your-secret-key-change-in-production"  # TODO: move to environment variable
+SECRET_KEY = os.getenv("JWT_SECRET_KEY") or secrets.token_urlsafe(32)
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 480  # 8 hours
 
@@ -33,7 +34,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     """Create JWT access token."""
     to_encode = data.copy()
     if expires_delta:
@@ -51,16 +52,17 @@ def verify_token(token: str) -> dict:
     """Verify and decode JWT token."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        conserje_id: int = payload.get("sub")
-        if conserje_id is None:
+        sub = payload.get("sub")
+        if sub is None:
             raise JWTError("Invalid token: no sub claim")
+        conserje_id = int(sub)
         return {"conserje_id": conserje_id}
-    except JWTError as e:
+    except (JWTError, ValueError, TypeError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid token: {str(e)}",
+            detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from None
 
 
 async def get_current_conserje(
@@ -82,7 +84,7 @@ async def get_current_conserje(
 
 def authenticate_conserje(
     db: Session, rut: str, password: str
-) -> Optional[Conserje]:
+) -> Conserje | None:
     """Authenticate conserje by RUT and password."""
     conserje = db.query(Conserje).filter(Conserje.rut == rut).first()
     if not conserje or not verify_password(password, conserje.password_hash):

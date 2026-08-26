@@ -1,10 +1,10 @@
 """NFC chip reading integration routes."""
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.config import get_db
 from app.models import Conserje, Departamento, Residente, Visita
-from app.schemas import RegistroVisitaRequest, VisitaResponse
 from app.security import get_current_conserje
 from reader_agent.service import (
     BACFailedException,
@@ -13,7 +13,6 @@ from reader_agent.service import (
     ReaderNotDetectedException,
     leer_cedula,
 )
-from pydantic import BaseModel
 
 router = APIRouter(prefix="/lectura-nfc", tags=["nfc"])
 
@@ -21,6 +20,7 @@ router = APIRouter(prefix="/lectura-nfc", tags=["nfc"])
 class LeerCedulaRequest(BaseModel):
     """Request to read and register a visit from NFC chip."""
 
+    run_visitante: str
     fecha_nacimiento: str  # DDMMYY format
     fecha_vencimiento: str  # DDMMYY format
     departamento_destino_id: int
@@ -70,11 +70,16 @@ async def leer_cedula_y_registrar_visita(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Resident not found",
         )
+    if residente.departamento_id != departamento.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Resident does not belong to the specified department",
+        )
 
     # Read chip
     try:
         datos_cedula = leer_cedula(
-            run=residente.run,  # Use resident's RUN for chip reading
+            run=request.run_visitante,
             fecha_nacimiento=request.fecha_nacimiento,
             fecha_vencimiento=request.fecha_vencimiento,
         )
@@ -82,22 +87,22 @@ async def leer_cedula_y_registrar_visita(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="NFC reader not detected. Check USB connection and drivers.",
-        )
+        ) from None
     except CardNotDetectedException:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No card in reader. Place identity card on reader.",
-        )
+        ) from None
     except BACFailedException:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="BAC authentication failed. Verify card data.",
-        )
+        ) from None
     except InvalidCardException:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid card format (not ICAO 9303 compatible).",
-        )
+        ) from None
 
     # Register visit with chip data
     visita = Visita(

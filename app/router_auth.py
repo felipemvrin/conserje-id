@@ -24,7 +24,7 @@ async def login(request: LoginRequest, db: Session = Depends(get_db)) -> TokenRe
             detail="Invalid RUT or password",
         )
 
-    access_token = create_access_token(data={"sub": conserje.id})
+    access_token = create_access_token(data={"sub": str(conserje.id)})
     return TokenResponse(access_token=access_token)
 
 

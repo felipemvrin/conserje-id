@@ -3,16 +3,19 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
-from app.config import Base, get_db
+from app.config import get_db
 from app.main import app
-from app.models import Conserje, Departamento, Residente
+from app.models import Base, Conserje, Departamento, Residente
 from app.security import hash_password
 
 # Use in-memory SQLite for testing
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+    SQLALCHEMY_DATABASE_URL,
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -33,7 +36,7 @@ app.dependency_overrides[get_db] = override_get_db
 client = TestClient(app)
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def test_db():
     """Fixture for test database."""
     Base.metadata.create_all(bind=engine)
@@ -85,6 +88,33 @@ def test_residente(test_db: Session, test_departamento: Departamento):
     test_db.commit()
     test_db.refresh(residente)
     return residente
+
+
+@pytest.fixture
+def test_departamento_2(test_db: Session):
+    """Create a second department for mismatch validations."""
+    depto = Departamento(
+        numero="102",
+        piso=1,
+        descripcion="Second test apartment",
+        activo=True,
+    )
+    test_db.add(depto)
+    test_db.commit()
+    test_db.refresh(depto)
+    return depto
+
+
+@pytest.fixture
+def auth_headers(test_conserje: Conserje):
+    """Get authorization headers with a valid JWT token."""
+    response = client.post(
+        "/auth/login",
+        json={"rut": test_conserje.rut, "password": "password123"},
+    )
+    assert response.status_code == 200
+    token = response.json()["access_token"]
+    return {"Authorization": "Bearer " + token}
 
 
 class TestAuth:
@@ -143,6 +173,31 @@ class TestVisitas:
         # Should fail without token
         assert response.status_code in (401, 403)
 
+    def test_registrar_visita_residente_departamento_mismatch(
+        self,
+        auth_headers: dict[str, str],
+        test_residente: Residente,
+        test_departamento_2: Departamento,
+    ):
+        """Reject visit when resident does not belong to selected department."""
+        response = client.post(
+            "/visitas/",
+            headers=auth_headers,
+            json={
+                "run_visitante": "11111111",
+                "nombre_visitante": "Juan Pérez",
+                "fecha_nacimiento_visitante": "010190",
+                "departamento_destino_id": test_departamento_2.id,
+                "residente_destino_id": test_residente.id,
+                "motivo": "Visita personal",
+            },
+        )
+        assert response.status_code == 400
+        assert (
+            response.json()["detail"]
+            == "Resident does not belong to the specified department"
+        )
+
 
 class TestHome:
     """Test home endpoint."""
@@ -152,3 +207,32 @@ class TestHome:
         response = client.get("/")
         assert response.status_code == 200
         assert "VisitaRUN" in response.text
+
+
+class TestNFC:
+    """Test NFC endpoint validations."""
+
+    def test_nfc_residente_departamento_mismatch(
+        self,
+        auth_headers: dict[str, str],
+        test_residente: Residente,
+        test_departamento_2: Departamento,
+    ):
+        """Reject NFC registration when resident and department mismatch."""
+        response = client.post(
+            "/lectura-nfc/leer-y-registrar",
+            headers=auth_headers,
+            json={
+                "run_visitante": "11111111",
+                "fecha_nacimiento": "010190",
+                "fecha_vencimiento": "010230",
+                "departamento_destino_id": test_departamento_2.id,
+                "residente_destino_id": test_residente.id,
+                "motivo": "Visita por NFC",
+            },
+        )
+        assert response.status_code == 400
+        assert (
+            response.json()["detail"]
+            == "Resident does not belong to the specified department"
+        )

@@ -164,6 +164,7 @@ Lee cédula con NFC y registra visita automáticamente. Requiere autenticación 
 **Request:**
 ```json
 {
+  "run_visitante": "12345678",
   "fecha_nacimiento": "010190",
   "fecha_vencimiento": "010230",
   "departamento_destino_id": 1,

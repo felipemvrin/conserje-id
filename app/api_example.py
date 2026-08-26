@@ -106,6 +106,7 @@ response = requests.post(
     f"{BASE_URL}/lectura-nfc/leer-y-registrar",
     headers=headers,
     json={
+        "run_visitante": "11111111",
         "fecha_nacimiento": "010190",  # DDMMYY format
         "fecha_vencimiento": "010230",  # DDMMYY format
         "departamento_destino_id": 1,
@@ -116,7 +117,7 @@ response = requests.post(
 )
 if response.status_code == 200:
     data = response.json()
-    print(f"✓ Chip read and visit registered:")
+    print("✓ Chip read and visit registered:")
     print(f"  RUN: {data['run']}")
     print(f"  Name: {data['nombre_completo']}")
     print(f"  Visit ID: {data['visita_id']}")

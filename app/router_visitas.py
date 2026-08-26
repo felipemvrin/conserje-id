@@ -44,6 +44,11 @@ async def registrar_visita(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Resident not found",
         )
+    if residente.departamento_id != departamento.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Resident does not belong to the specified department",
+        )
 
     # Create visit record
     visita = Visita(
