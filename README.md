@@ -60,6 +60,12 @@ Para incluir herramientas de desarrollo (`pytest`, `ruff`):
 uv sync --group dev
 ```
 
+Si quieres crear el conserje demo de desarrollo al inicializar la base de datos, habilítalo explícitamente:
+
+```bash
+VISITARUN_CREATE_DEMO_CONSERJE=true python init_db.py
+```
+
 ## Ejecutar la aplicacion (base)
 
 ```bash
