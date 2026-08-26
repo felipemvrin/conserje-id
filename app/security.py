@@ -1,6 +1,6 @@
 """Security and authentication utilities."""
+import logging
 import os
-import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException, status
@@ -12,8 +12,15 @@ from sqlalchemy.orm import Session
 from app.config import get_db
 from app.models import Conserje
 
+logger = logging.getLogger(__name__)
+
 # Configuration
-SECRET_KEY = os.getenv("JWT_SECRET_KEY") or secrets.token_urlsafe(32)
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-me-in-production")
+if SECRET_KEY == "change-me-in-production":
+    logger.warning(
+        "JWT_SECRET_KEY is not set; using insecure default secret. "
+        "Set JWT_SECRET_KEY in production."
+    )
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 480  # 8 hours
 
