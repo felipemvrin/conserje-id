@@ -61,8 +61,12 @@ async def login_submit(
         )
 
     # Create token and set cookie
-    token = create_access_token(data={"sub": conserje.id})
-    response = RedirectResponse(url="/dashboard", status_code=303)
+    token = create_access_token(data={"sub": str(conserje.id)})
+    if request.headers.get("HX-Request") == "true":
+        response = Response(status_code=204)
+        response.headers["HX-Redirect"] = "/dashboard"
+    else:
+        response = RedirectResponse(url="/dashboard", status_code=303)
     response.set_cookie(
         "access_token",
         token,
@@ -150,17 +154,19 @@ async def estadisticas_hoy(
     salientes = total_visitas - entrantes
 
     return f"""
-    <div class="stat-box">
-        <div class="stat-value">{total_visitas}</div>
-        <div class="stat-label">Visitas hoy</div>
-    </div>
-    <div class="stat-box">
-        <div class="stat-value">{entrantes}</div>
-        <div class="stat-label">Entrantes</div>
-    </div>
-    <div class="stat-box">
-        <div class="stat-value">{salientes}</div>
-        <div class="stat-label">Salientes</div>
+    <div class="stats">
+        <div class="stat-box">
+            <div class="stat-value">{total_visitas}</div>
+            <div class="stat-label">Visitas hoy</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-value">{entrantes}</div>
+            <div class="stat-label">Entrantes</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-value">{salientes}</div>
+            <div class="stat-label">Salientes</div>
+        </div>
     </div>
     """
 
