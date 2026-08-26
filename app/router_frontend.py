@@ -1,23 +1,56 @@
 """Frontend routes for HTML/HTMX interface."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.config import get_db
 from app.models import Conserje, Departamento, Residente, Visita
-from app.schemas import LoginRequest
-from app.security import authenticate_conserje, create_access_token, get_current_conserje
+from app.security import authenticate_conserje, create_access_token, verify_token
 
 router = APIRouter(tags=["frontend"])
 templates = Jinja2Templates(directory="app/templates")
+db_dependency = Depends(get_db)
 
 
 def get_token_from_cookie(request: Request) -> str | None:
     """Extract JWT token from cookie."""
     return request.cookies.get("access_token")
+
+
+def build_login_redirect_response(request: Request) -> Response:
+    """Build redirect response for unauthenticated frontend requests."""
+    if request.headers.get("HX-Request") == "true":
+        response = Response(status_code=204)
+        response.headers["HX-Redirect"] = "/login"
+    else:
+        response = RedirectResponse(url="/login", status_code=303)
+    response.delete_cookie("access_token")
+    return response
+
+
+def require_frontend_conserje(request: Request, db: Session) -> Conserje | Response:
+    """Authenticate frontend requests using the session cookie."""
+    token = get_token_from_cookie(request)
+    if not token:
+        return build_login_redirect_response(request)
+
+    try:
+        token_data = verify_token(token)
+    except HTTPException:
+        return build_login_redirect_response(request)
+
+    conserje = db.query(Conserje).filter(Conserje.id == token_data["conserje_id"]).first()
+    if not conserje or not conserje.activo:
+        return build_login_redirect_response(request)
+    return conserje
+
+
+def start_of_utc_day(day: datetime.date) -> datetime:
+    """Return the UTC start timestamp for a given day."""
+    return datetime(day.year, day.month, day.day, tzinfo=UTC)
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -41,7 +74,7 @@ async def login_page(request: Request) -> HTMLResponse:
 
 @router.post("/login", response_class=HTMLResponse)
 async def login_submit(
-    request: Request, db: Session = Depends(get_db)
+    request: Request, db: Session = db_dependency
 ) -> Response:
     """Handle login form submission."""
     form_data = await request.form()
@@ -80,12 +113,13 @@ async def login_submit(
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(
     request: Request,
-    conserje: Conserje = Depends(get_current_conserje),
+    db: Session = db_dependency,
 ) -> HTMLResponse:
     """Main dashboard after login."""
-    token = get_token_from_cookie(request)
-    if not token:
-        return RedirectResponse(url="/login", status_code=303)
+    auth_result = require_frontend_conserje(request, db)
+    if isinstance(auth_result, Response):
+        return auth_result
+    conserje = auth_result
 
     return templates.TemplateResponse(
         request,
@@ -109,12 +143,15 @@ async def logout(request: Request) -> Response:
 @router.get("/lectura-nfc-form", response_class=HTMLResponse)
 async def lectura_nfc_form(
     request: Request,
-    db: Session = Depends(get_db),
-    conserje: Conserje = Depends(get_current_conserje),
+    db: Session = db_dependency,
 ) -> HTMLResponse:
     """NFC reading form."""
-    departamentos = db.query(Departamento).filter(Departamento.activo == True).all()
-    residentes = db.query(Residente).filter(Residente.activo == True).all()
+    auth_result = require_frontend_conserje(request, db)
+    if isinstance(auth_result, Response):
+        return auth_result
+
+    departamentos = db.query(Departamento).filter(Departamento.activo).all()
+    residentes = db.query(Residente).filter(Residente.activo).all()
 
     return templates.TemplateResponse(
         request,
@@ -129,24 +166,29 @@ async def lectura_nfc_form(
 
 @router.get("/api/estadisticas-hoy", response_class=HTMLResponse)
 async def estadisticas_hoy(
-    db: Session = Depends(get_db),
-    conserje: Conserje = Depends(get_current_conserje),
-) -> str:
+    request: Request,
+    db: Session = db_dependency,
+) -> Response:
     """Get today's statistics."""
-    today = datetime.now(timezone.utc).date()
+    auth_result = require_frontend_conserje(request, db)
+    if isinstance(auth_result, Response):
+        return auth_result
+
+    today = datetime.now(UTC).date()
+    start_of_today = start_of_utc_day(today)
 
     # Total visits today
     total_visitas = (
         db.query(Visita)
-        .filter(Visita.creado_en >= datetime.combine(today, datetime.min.time()))
+        .filter(Visita.creado_en >= start_of_today)
         .count()
     )
 
     # Visits with no exit (still inside)
     entrantes = (
         db.query(Visita)
-        .filter(Visita.creado_en >= datetime.combine(today, datetime.min.time()))
-        .filter(Visita.timestamp_salida == None)
+        .filter(Visita.creado_en >= start_of_today)
+        .filter(Visita.timestamp_salida.is_(None))
         .count()
     )
 
@@ -174,15 +216,19 @@ async def estadisticas_hoy(
 @router.get("/historial", response_class=HTMLResponse)
 async def historial(
     request: Request,
-    db: Session = Depends(get_db),
-    conserje: Conserje = Depends(get_current_conserje),
+    db: Session = db_dependency,
 ) -> HTMLResponse:
     """Today's visit history."""
-    today = datetime.now(timezone.utc).date()
+    auth_result = require_frontend_conserje(request, db)
+    if isinstance(auth_result, Response):
+        return auth_result
+
+    today = datetime.now(UTC).date()
+    start_of_today = start_of_utc_day(today)
 
     visitas = (
         db.query(Visita)
-        .filter(Visita.creado_en >= datetime.combine(today, datetime.min.time()))
+        .filter(Visita.creado_en >= start_of_today)
         .order_by(Visita.timestamp_ingreso.desc())
         .all()
     )
@@ -200,12 +246,15 @@ async def historial(
 @router.get("/registro-manual-form", response_class=HTMLResponse)
 async def registro_manual_form(
     request: Request,
-    db: Session = Depends(get_db),
-    conserje: Conserje = Depends(get_current_conserje),
+    db: Session = db_dependency,
 ) -> HTMLResponse:
     """Manual visit registration form."""
-    departamentos = db.query(Departamento).filter(Departamento.activo == True).all()
-    residentes = db.query(Residente).filter(Residente.activo == True).all()
+    auth_result = require_frontend_conserje(request, db)
+    if isinstance(auth_result, Response):
+        return auth_result
+
+    departamentos = db.query(Departamento).filter(Departamento.activo).all()
+    residentes = db.query(Residente).filter(Residente.activo).all()
 
     return templates.TemplateResponse(
         request,
@@ -221,10 +270,13 @@ async def registro_manual_form(
 @router.get("/admin-panel", response_class=HTMLResponse)
 async def admin_panel(
     request: Request,
-    db: Session = Depends(get_db),
-    conserje: Conserje = Depends(get_current_conserje),
+    db: Session = db_dependency,
 ) -> HTMLResponse:
     """Admin panel (simplified)."""
+    auth_result = require_frontend_conserje(request, db)
+    if isinstance(auth_result, Response):
+        return auth_result
+
     departamentos = db.query(Departamento).all()
     residentes = db.query(Residente).all()
 

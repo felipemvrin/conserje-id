@@ -10,11 +10,24 @@ from app.models import Base, Conserje
 from app.security import hash_password
 
 
+def should_seed_demo_conserje() -> bool:
+    """Return True when demo login seeding is explicitly enabled."""
+    return os.getenv("VISITARUN_CREATE_DEMO_CONSERJE", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
 def init_db():
     """Create all tables in the database."""
     print(f"Inicializando BD: {DATABASE_URL}")
     Base.metadata.create_all(engine)
     print("✓ Tablas creadas exitosamente.")
+
+    if not should_seed_demo_conserje():
+        print("✓ Conserje demo omitido. Defina VISITARUN_CREATE_DEMO_CONSERJE=true para crearlo.")
+        return
 
     db = SessionLocal()
     try:

@@ -1,4 +1,6 @@
 """Tests for API endpoints and security."""
+import importlib
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -35,6 +37,11 @@ def override_get_db():
 app.dependency_overrides[get_db] = override_get_db
 
 client = TestClient(app)
+
+
+def load_init_db_module():
+    """Reload init_db module to keep tests isolated from cached patches."""
+    return importlib.reload(importlib.import_module("init_db"))
 
 
 @pytest.fixture(autouse=True)
@@ -147,6 +154,19 @@ class TestAuth:
             json={"password": "password123"},
         )
         assert response.status_code == 422  # Validation error
+
+    def test_frontend_login_htmx_sets_cookie_and_redirects(
+        self, test_conserje: Conserje
+    ):
+        """HTMX frontend login should set cookie and redirect via HX-Redirect."""
+        response = client.post(
+            "/login",
+            headers={"HX-Request": "true"},
+            data={"rut": "12345678", "password": "password123"},
+        )
+        assert response.status_code == 204
+        assert response.headers["HX-Redirect"] == "/dashboard"
+        assert "access_token=" in response.headers["set-cookie"]
 
 
 class TestVisitas:
@@ -263,6 +283,23 @@ class TestHome:
         assert response.status_code == 200
         assert "VisitaRUN" in response.text
 
+    def test_dashboard_redirects_to_login_without_cookie(self):
+        """Dashboard page should redirect browser clients to login."""
+        response = client.get("/dashboard", follow_redirects=False)
+        assert response.status_code == 303
+        assert response.headers["location"] == "/login"
+
+    def test_dashboard_redirects_to_login_with_invalid_cookie(self):
+        """Invalid dashboard cookie should be cleared and redirected to login."""
+        client.cookies.set("access_token", "invalid")
+        try:
+            response = client.get("/dashboard", follow_redirects=False)
+        finally:
+            client.cookies.clear()
+        assert response.status_code == 303
+        assert response.headers["location"] == "/login"
+        assert "access_token=\"\"" in response.headers["set-cookie"]
+
 
 class TestNFC:
     """Test NFC endpoint validations."""
@@ -324,3 +361,39 @@ class TestNFC:
         )
         assert response.status_code == 200
         assert response.json()["run"] == "11111111"
+
+
+class TestInitDb:
+    """Test database initialization helpers."""
+
+    def test_init_db_skips_demo_conserje_without_flag(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        test_db: Session,
+    ):
+        """init_db should not create a demo login unless explicitly enabled."""
+        init_db_module = load_init_db_module()
+        monkeypatch.delenv("VISITARUN_CREATE_DEMO_CONSERJE", raising=False)
+        monkeypatch.setattr(init_db_module, "engine", engine)
+        monkeypatch.setattr(init_db_module, "SessionLocal", TestingSessionLocal)
+
+        init_db_module.init_db()
+
+        assert test_db.query(Conserje).filter(Conserje.rut == "12345678").first() is None
+
+    def test_init_db_creates_demo_conserje_with_flag(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        test_db: Session,
+    ):
+        """init_db should create the demo login when explicitly enabled."""
+        init_db_module = load_init_db_module()
+        monkeypatch.setenv("VISITARUN_CREATE_DEMO_CONSERJE", "true")
+        monkeypatch.setattr(init_db_module, "engine", engine)
+        monkeypatch.setattr(init_db_module, "SessionLocal", TestingSessionLocal)
+
+        init_db_module.init_db()
+
+        conserje = test_db.query(Conserje).filter(Conserje.rut == "12345678").first()
+        assert conserje is not None
+        assert conserje.nombre == "Conserje de Prueba"
