@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block title %}Lectura NFC - VisitaRUN{% endblock %}
+
+{% block extra_css %}
+<style>
+    .nfc-container {
+        text-align: center;
+    }
+    
+    .nfc-icon {
+        font-size: 64px;
+        margin: 20px 0;
+        animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.05); opacity: 0.8; }
+    }
+    
+    .reader-status {
+        padding: 12px;
+        border-radius: 6px;
+        margin: 16px 0;
+        font-size: 14px;
+    }
+    
+    .status-waiting {
+        background: #eef;
+        color: #33c;
+        border: 1px solid #ccf;
+    }
+    
+    .status-error {
+        background: #fee;
+        color: #c33;
+        border: 1px solid #fcc;
+    }
+    
+    .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-top: 16px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>📱 Lectura de Cédula</h1>
+    
+    <form hx-post="/lectura-nfc/procesar" hx-swap="none">
+        <div class="nfc-container">
+            <div class="nfc-icon">📲</div>
+            <p>Acerca la cédula de identidad al lector</p>
+            <div class="reader-status status-waiting">
+                Esperando tarjeta...
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label for="fecha_nacimiento">Fecha de nacimiento (DDMMYY)</label>
+            <input 
+                type="text" 
+                id="fecha_nacimiento" 
+                name="fecha_nacimiento" 
+                placeholder="010190"
+                pattern="[0-9]{6}"
+                required
+                title="Formato: DDMMYY (ej: 010190)"
+            />
+        </div>
+        
+        <div class="form-group">
+            <label for="fecha_vencimiento">Fecha de vencimiento (DDMMYY)</label>
+            <input 
+                type="text" 
+                id="fecha_vencimiento" 
+                name="fecha_vencimiento" 
+                placeholder="010230"
+                pattern="[0-9]{6}"
+                required
+                title="Formato: DDMMYY (ej: 010230)"
+            />
+        </div>
+        
+        <div class="form-group">
+            <label for="departamento_id">Departamento destino</label>
+            <select id="departamento_id" name="departamento_id" required>
+                <option value="">-- Seleccionar --</option>
+                {% for depto in departamentos %}
+                <option value="{{ depto.id }}">{{ depto.numero }} (Piso {{ depto.piso }})</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="residente_id">Residente</label>
+            <select id="residente_id" name="residente_id" required>
+                <option value="">-- Seleccionar --</option>
+                {% for residente in residentes %}
+                <option value="{{ residente.id }}">{{ residente.nombre_completo }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="motivo">Motivo de visita</label>
+            <input 
+                type="text" 
+                id="motivo" 
+                name="motivo" 
+                placeholder="Ej: Visita familiar, Entrega de paquete"
+                required
+            />
+        </div>
+        
+        <div class="form-group">
+            <label for="notas">Notas adicionales</label>
+            <textarea 
+                id="notas" 
+                name="notas" 
+                placeholder="Información adicional sobre la visita"
+                rows="3"
+            ></textarea>
+        </div>
+        
+        <div class="form-row">
+            <button type="submit">Registrar</button>
+            <button type="button" class="btn-secondary" onclick="history.back()">Cancelar</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

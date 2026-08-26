@@ -3,7 +3,7 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -28,7 +28,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 480  # 8 hours
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # HTTP Bearer scheme for FastAPI
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 
 def hash_password(password: str) -> str:
@@ -73,11 +73,27 @@ def verify_token(token: str) -> dict:
 
 
 async def get_current_conserje(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     db: Session = Depends(get_db),
 ) -> Conserje:
-    """Dependency: get current authenticated conserje from token."""
-    token = credentials.credentials
+    """Dependency: get current authenticated conserje from token (cookie or header)."""
+    token = None
+    
+    # Try to get token from Authorization header
+    if credentials:
+        token = credentials.credentials
+    
+    # Try to get token from cookie
+    if not token:
+        token = request.cookies.get("access_token")
+    
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+    
     token_data = verify_token(token)
 
     conserje = db.query(Conserje).filter(Conserje.id == token_data["conserje_id"]).first()

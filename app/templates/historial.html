@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}Historial - VisitaRUN{% endblock %}
+
+{% block extra_css %}
+<style>
+    .container {
+        max-width: 900px;
+    }
+    
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+    }
+    
+    th, td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #ddd;
+        font-size: 14px;
+    }
+    
+    th {
+        background: #667eea;
+        color: white;
+        font-weight: 600;
+    }
+    
+    tr:hover {
+        background: #f9f9f9;
+    }
+    
+    .badge {
+        display: inline-block;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    
+    .badge-in {
+        background: #efe;
+        color: #3c3;
+    }
+    
+    .badge-out {
+        background: #fee;
+        color: #c33;
+    }
+    
+    .empty {
+        text-align: center;
+        color: #999;
+        padding: 40px 20px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>📋 Historial del día</h1>
+    
+    {% if visitas %}
+    <table>
+        <thead>
+            <tr>
+                <th>Hora ingreso</th>
+                <th>Visitante</th>
+                <th>RUN</th>
+                <th>Departamento</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for visita in visitas %}
+            <tr>
+                <td>{{ visita.timestamp_ingreso.strftime('%H:%M:%S') }}</td>
+                <td>{{ visita.nombre_visitante }}</td>
+                <td>{{ visita.run_visitante }}</td>
+                <td>{{ visita.departamento.numero }}</td>
+                <td>
+                    {% if visita.timestamp_salida %}
+                    <span class="badge badge-out">Salida {{ visita.timestamp_salida.strftime('%H:%M:%S') }}</span>
+                    {% else %}
+                    <span class="badge badge-in">Dentro</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if not visita.timestamp_salida %}
+                    <button 
+                        hx-post="/api/visitas/{{ visita.id }}/salida"
+                        hx-confirm="¿Registrar salida?"
+                        style="padding: 6px 12px; font-size: 12px;"
+                    >
+                        Salida
+                    </button>
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty">
+        <p>No hay visitas registradas hoy</p>
+    </div>
+    {% endif %}
+    
+    <div style="margin-top: 20px;">
+        <button class="btn-secondary" onclick="history.back()">Volver</button>
+    </div>
+</div>
+{% endblock %}

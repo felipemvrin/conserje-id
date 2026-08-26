@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Login - VisitaRUN{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>🪪 VisitaRUN</h1>
+    <p class="subtitle">Sistema de registro de visitas</p>
+    
+    {% if error %}
+    <div class="alert alert-error">
+        {{ error }}
+    </div>
+    {% endif %}
+    
+    <form hx-post="/login" hx-swap="none" hx-on::response-error="
+        if(event.detail.xhr.status === 401) {
+            document.getElementById('error-msg').textContent = 'RUT o contraseña incorrectos';
+            htmx.addClass(document.getElementById('error-msg'), 'alert alert-error');
+        }
+    ">
+        <div id="error-msg"></div>
+        
+        <div class="form-group">
+            <label for="rut">RUT (sin puntos ni guión)</label>
+            <input 
+                type="text" 
+                id="rut" 
+                name="rut" 
+                placeholder="12345678"
+                required
+                pattern="[0-9]{8}"
+            />
+        </div>
+        
+        <div class="form-group">
+            <label for="password">Contraseña</label>
+            <input 
+                type="password" 
+                id="password" 
+                name="password" 
+                placeholder="••••••••"
+                required
+            />
+        </div>
+        
+        <button type="submit" hx-indicator="#loading">
+            <span id="loading" class="htmx-indicator">
+                <span class="spinner"></span>
+            </span>
+            Iniciar sesión
+        </button>
+    </form>
+</div>
+
+<script>
+    // Redirect to dashboard on successful login
+    document.body.addEventListener('htmx:afterRequest', function(event) {
+        if (event.detail.xhr.status === 200) {
+            window.location.href = '/dashboard';
+        }
+    });
+</script>
+{% endblock %}
