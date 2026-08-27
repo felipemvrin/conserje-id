@@ -2,13 +2,15 @@
 
 VisitaRUN es una aplicacion para conserjerias de edificios que usa un lector NFC ACS ACR122U para leer la cedula chilena y registrar visitas en segundos.
 
-## Objetivo del repositorio
+## Objetivo del proyecto
 
-Este repositorio deja preparada la base de trabajo para:
+VisitaRUN permite registrar visitas en conserjerías mediante lectura NFC de la
+cédula chilena o ingreso manual de datos. El repositorio contiene:
 
-- `reader_agent/`: integracion con hardware NFC (ACR122U, PC/SC, ICAO 9303).
-- `app/`: backend FastAPI + vistas Jinja2/HTMX.
-- `tests/`: pruebas con pytest.
+- `reader_agent/`: integración con hardware NFC (ACR122U, PC/SC, ICAO 9303).
+- `app/`: backend FastAPI, API REST y vistas Jinja2/HTMX.
+- `alembic/`: migraciones de base de datos.
+- `tests/`: pruebas unitarias y de integración.
 
 ## Requisitos de desarrollo (macOS 12 Monterey)
 
@@ -60,13 +62,26 @@ Para incluir herramientas de desarrollo (`pytest`, `ruff`):
 uv sync --group dev
 ```
 
-Si quieres crear el conserje demo de desarrollo al inicializar la base de datos, habilítalo explícitamente:
+## Ejecutar la aplicacion (base)
+
+Inicializar las tablas de la base de datos local:
+
+```bash
+python init_db.py
+```
+
+Para crear un conserje demo de desarrollo, habilítalo explícitamente:
 
 ```bash
 VISITARUN_CREATE_DEMO_CONSERJE=true python init_db.py
 ```
 
-## Ejecutar la aplicacion (base)
+Credenciales demo:
+
+- RUT: `12345678`
+- Contraseña: `password123`
+
+Iniciar el servidor:
 
 ```bash
 uv run uvicorn app.main:app --reload
@@ -74,29 +89,75 @@ uv run uvicorn app.main:app --reload
 
 Abrir en navegador:
 
-- `http://127.0.0.1:8000/`
+- `http://127.0.0.1:8000/login`
 
-## Estructura inicial
+## Configuración
+
+La aplicación usa SQLite por defecto y crea el archivo `visitarun.db` en la
+raíz del proyecto. La base de datos puede cambiarse mediante `DATABASE_URL`:
+
+```bash
+export DATABASE_URL="sqlite:///./visitarun.db"
+```
+
+En producción, define una clave JWT propia:
+
+```bash
+export JWT_SECRET_KEY="cambiar-por-una-clave-segura"
+```
+
+El valor predeterminado de `JWT_SECRET_KEY` solo sirve para desarrollo local.
+
+## Pruebas
+
+Ejecutar la suite completa:
+
+```bash
+python -m pytest -q
+```
+
+Las pruebas que requieren un lector NFC físico ACS ACR122U están omitidas en
+entornos sin hardware.
+
+## Estructura actual
 
 ```text
 .
 ├── app/
 │   ├── __init__.py
 │   ├── main.py
+│   ├── models.py
+│   ├── schemas.py
+│   ├── security.py
+│   ├── config.py
+│   ├── router_auth.py
+│   ├── router_visitas.py
+│   ├── router_nfc.py
+│   ├── router_frontend.py
 │   └── templates/
-│       └── index.html
 ├── reader_agent/
-│   ├── __init__.py
+│   ├── bac.py
+│   ├── chip_reader.py
 │   └── service.py
+├── alembic/
+├── init_db.py
 ├── tests/
-│   └── __init__.py
+│   ├── test_api.py
+│   └── test_reader.py
 ├── .gitignore
 ├── pyproject.toml
 └── README.md
 ```
 
-## Notas
+## Estado actual
 
+- Fases 1 a 5 completadas: estructura, base de datos, lector NFC, API y
+  frontend HTMX.
+- Fase 6 en progreso: pruebas, validación de integración y preparación para
+  despliegue.
+- El login web usa JWT en una cookie `HttpOnly` con una duración de 8 horas.
+- El frontend incluye dashboard, lectura NFC, registro manual, historial y
+  panel administrativo.
+- La integración con un lector NFC físico debe validarse en el equipo donde
+  se conecte el ACS ACR122U.
 - Desarrollo local sin Docker Desktop.
-- Base de datos y modelos se implementan en la Fase 2.
-- Flujo BAC/PACE y lectura real del chip se implementan en la Fase 3.
