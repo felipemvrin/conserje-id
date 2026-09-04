@@ -61,13 +61,13 @@
         </div>
         
         <div class="form-group">
-            <label for="run_visitante">RUN Visitante (sin puntos ni guión)</label>
+            <label for="run_visitante">RUN Visitante</label>
             <input
                 type="text"
                 id="run_visitante"
                 name="run_visitante"
-                placeholder="12345678"
-                pattern="[0-9]{8}"
+                placeholder="12345678-9"
+                pattern="[0-9]{7,8}-?[0-9Kk]"
                 required
             />
         </div>
@@ -96,6 +96,29 @@
                 required
                 title="Formato: DDMMYY (ej: 010230)"
             />
+        </div>
+
+        <div class="form-group">
+            <label for="can">CAN de la cédula</label>
+            <input
+                type="password"
+                id="can"
+                name="can"
+                inputmode="numeric"
+                autocomplete="off"
+                pattern="[0-9]{9}"
+                placeholder="9 dígitos"
+                required
+            />
+        </div>
+
+        <div class="form-group">
+            <button type="button" id="leer-cedula">Leer cédula</button>
+        </div>
+
+        <div class="form-group" id="datos-cedula" hidden>
+            <label for="nombre_completo">Nombre en cédula</label>
+            <input type="text" id="nombre_completo" readonly />
         </div>
         
         <div class="form-group">
@@ -147,6 +170,44 @@
 </div>
 
 <script>
+    document.getElementById('leer-cedula').addEventListener('click', async function() {
+        const status = document.querySelector('.reader-status');
+        const run = document.getElementById('run_visitante').value;
+        const fechaNacimiento = document.getElementById('fecha_nacimiento').value;
+        const fechaVencimiento = document.getElementById('fecha_vencimiento').value;
+        const can = document.getElementById('can').value;
+
+        if (!run || !fechaNacimiento || !fechaVencimiento || !can) {
+            status.textContent = 'Ingresa RUN, fechas y CAN para leer la cédula.';
+            status.className = 'reader-status status-error';
+            return;
+        }
+
+        status.textContent = 'Leyendo cédula...';
+        status.className = 'reader-status status-waiting';
+        const response = await fetch('/lectura-nfc/leer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                run_visitante: run,
+                fecha_nacimiento: fechaNacimiento,
+                fecha_vencimiento: fechaVencimiento,
+                can: can
+            })
+        });
+        const result = await response.json();
+        if (!response.ok) {
+            status.textContent = result.detail || 'No se pudo leer la cédula.';
+            status.className = 'reader-status status-error';
+            return;
+        }
+
+        document.getElementById('nombre_completo').value = result.nombre_completo;
+        document.getElementById('datos-cedula').hidden = false;
+        status.textContent = 'Cédula leída correctamente.';
+        status.className = 'reader-status status-waiting';
+    });
+
     document.body.addEventListener('htmx:afterRequest', function(event) {
         if (
             event.detail.elt &&

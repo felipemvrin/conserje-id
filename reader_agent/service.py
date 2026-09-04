@@ -3,7 +3,13 @@ import logging
 from dataclasses import dataclass
 
 from reader_agent.bac import BACKey
-from reader_agent.chip_reader import ACR122UReader, ChipData
+from reader_agent.chip_reader import (
+    ACR122UReader,
+    BACAuthenticationError,
+    CardProtocolError,
+    ChipData,
+    PACEAuthenticationRequired,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +34,12 @@ class CardNotDetectedException(ReaderException):
 
 class BACFailedException(ReaderException):
     """BAC authentication failed."""
+
+    pass
+
+
+class PACERequiredException(ReaderException):
+    """The document requires PACE authentication, which is not available."""
 
     pass
 
@@ -97,18 +109,18 @@ def leer_cedula(
         )
 
     try:
-        # Step 3: Derive BAC key
+        # Step 3: Authenticate with the document using BAC.
         bac_key = BACKey(run, fecha_nacimiento, fecha_vencimiento)
-        logger.info("BAC key derived.")
-
-        # Step 4: Attempt BAC handshake (simplified)
-        # In a real implementation, this would include full APDU exchange
-        session_keys = bac_key.establish_bac_session(b"\x00" * 8)
-        if not session_keys:
-            logger.error("BAC handshake failed.")
+        try:
+            reader.establish_bac(bac_key)
+        except PACEAuthenticationRequired as error:
+            raise PACERequiredException(
+                "Esta cédula requiere autenticación PACE con su CAN."
+            ) from error
+        except BACAuthenticationError as error:
             raise BACFailedException(
-                "Error de autenticación BAC. Verifique datos de cédula."
-            )
+                "Error de autenticación BAC. Verifique los datos MRZ de la cédula."
+            ) from error
 
         logger.info("BAC session established.")
 
@@ -152,28 +164,49 @@ def _read_chip_data(
     Returns:
         ChipData object with extracted information
     """
-    # Read DG1 (personal data)
-    dg1_data = reader.read_file(b"\x01\x01")
-
-    if not dg1_data:
+    try:
+        dg1_data = reader.read_protected_file(b"\x01\x01")
+    except CardProtocolError as error:
         raise InvalidCardException(
             "No se pudo leer datos de la tarjeta. "
             "Verifique que sea una cédula de identidad válida."
-        )
+        ) from error
 
-    # Simplified: In real implementation, parse binary DG1 format
-    # For now, return mock data that could be enriched from DG1
-    nombre_completo = "USUARIO DE PRUEBA"  # Would parse from chip
-
-    # Read DG2 (photo) if available
-    foto_bytes = reader.read_file(b"\x01\x02")
+    nombre_completo = _nombre_desde_dg1(dg1_data)
 
     logger.debug(f"DG1 size: {len(dg1_data) if dg1_data else 0} bytes")
-    logger.debug(f"DG2 (photo) available: {foto_bytes is not None}")
 
     return ChipData(
         run=run,
         nombre_completo=nombre_completo,
         fecha_nacimiento=fecha_nacimiento,
-        foto_bytes=foto_bytes,
+        foto_bytes=None,
     )
+
+
+def _nombre_desde_dg1(dg1_data: bytes) -> str:
+    """Extract the name field from the MRZ held in ICAO DG1."""
+    marker = b"\x5F\x1F"
+    offset = dg1_data.find(marker)
+    if offset < 0 or offset + 3 > len(dg1_data):
+        raise InvalidCardException("DG1 no contiene una zona MRZ válida.")
+
+    length = dg1_data[offset + 2]
+    value_start = offset + 3
+    if length & 0x80:
+        length_size = length & 0x7F
+        if not length_size or value_start + length_size > len(dg1_data):
+            raise InvalidCardException("El largo MRZ de DG1 es inválido.")
+        length = int.from_bytes(dg1_data[value_start : value_start + length_size], "big")
+        value_start += length_size
+    mrz = dg1_data[value_start : value_start + length].decode("ascii", errors="ignore")
+
+    for line in reversed(mrz.splitlines()):
+        if "<<" in line:
+            apellido, _, nombres = line.partition("<<")
+            nombre = " ".join(
+                part for part in (apellido + " " + nombres).replace("<", " ").split() if part
+            )
+            if nombre:
+                return nombre
+    raise InvalidCardException("No se pudo extraer el nombre desde DG1.")

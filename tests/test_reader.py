@@ -3,12 +3,13 @@ import pytest
 
 from reader_agent import chip_reader
 from reader_agent.bac import BACKey
-from reader_agent.chip_reader import ACR122UReader
+from reader_agent.chip_reader import ACR122UReader, PACEAuthenticationRequired
 from reader_agent.service import (
     BACFailedException,
     CardNotDetectedException,
     DatosCedula,
     ReaderNotDetectedException,
+    _nombre_desde_dg1,
     leer_cedula,
 )
 
@@ -29,8 +30,8 @@ class TestBACKey:
         """Test MRZ data formatting."""
         bac = BACKey("12345678", "010190", "010230")
         mrz = bac._format_mrz_data()
-        assert mrz == "123456780101900102309"
-        assert len(mrz) == 21
+        assert mrz == "12345678<890010113002016"
+        assert len(mrz) == 24
 
     def test_derive_key_material(self) -> None:
         """Test encryption and MAC key derivation."""
@@ -89,6 +90,21 @@ class TestReaderService:
         finally:
             chip_reader._SMARTCARD_IMPORT_ERROR = original_import_error
 
+    def test_establish_bac_stops_when_card_requires_pace(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """PACE cards must not receive a BAC EXTERNAL AUTHENTICATE command."""
+        class FakeConnection:
+            def disconnect(self) -> None:
+                return None
+
+        reader = ACR122UReader()
+        reader.connection = FakeConnection()
+        monkeypatch.setattr(reader, "_requires_pace", lambda: True)
+
+        with pytest.raises(PACEAuthenticationRequired):
+            reader.establish_bac(BACKey("12345678", "010190", "010230"))
+
     @pytest.mark.skip(reason="Requires physical ACR122U reader")
     def test_leer_cedula_success(self) -> None:
         """Test successful chip read (requires hardware)."""
@@ -128,6 +144,13 @@ class TestReaderService:
         assert datos.run == "12345678"
         assert datos.nombre_completo == "Juan Pérez"
         assert datos.foto_bytes is None
+
+    def test_nombre_desde_dg1(self) -> None:
+        """Extract the printable name from the DG1 MRZ field."""
+        mrz = b"I<CHL<<<<<<<<<<<<<<<<<<<<<<<<\nPEREZ<<JUAN<CARLOS<<<<<<<<<<<<<"
+        dg1 = b"\x61" + bytes([len(mrz) + 3]) + b"\x5F\x1F" + bytes([len(mrz)]) + mrz
+
+        assert _nombre_desde_dg1(dg1) == "PEREZ JUAN CARLOS"
 
     def test_leer_cedula_masks_run_in_logs(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture

@@ -304,6 +304,31 @@ class TestHome:
 class TestNFC:
     """Test NFC endpoint validations."""
 
+    def test_nfc_leer_form(self, monkeypatch: pytest.MonkeyPatch, auth_headers: dict[str, str]):
+        """The read-only NFC endpoint returns chip data without registering a visit."""
+        monkeypatch.setattr(
+            "app.router_nfc.leer_cedula",
+            lambda run, fecha_nacimiento, fecha_vencimiento: DatosCedula(
+                run=run,
+                nombre_completo="Visitante NFC",
+                fecha_nacimiento=fecha_nacimiento,
+            ),
+        )
+
+        response = client.post(
+            "/lectura-nfc/leer",
+            headers=auth_headers,
+            data={
+                "run_visitante": "11111111",
+                "fecha_nacimiento": "010190",
+                "fecha_vencimiento": "010230",
+                "can": "123456",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["nombre_completo"] == "Visitante NFC"
+
     def test_nfc_residente_departamento_mismatch(
         self,
         auth_headers: dict[str, str],

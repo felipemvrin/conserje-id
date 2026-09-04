@@ -10,6 +10,7 @@ from reader_agent.service import (
     BACFailedException,
     CardNotDetectedException,
     InvalidCardException,
+    PACERequiredException,
     ReaderNotDetectedException,
     leer_cedula,
 )
@@ -38,6 +39,59 @@ class LeerCedulaResponse(BaseModel):
     foto_disponible: bool
     visita_id: int
     timestamp_registro: str
+
+
+class LeerCedulaDatosResponse(BaseModel):
+    """Identity data read from the chip, before visit registration."""
+
+    run: str
+    nombre_completo: str
+    fecha_nacimiento: str
+    foto_disponible: bool
+
+
+def _leer_cedula_desde_chip(
+    run_visitante: str, fecha_nacimiento: str, fecha_vencimiento: str
+) -> LeerCedulaDatosResponse:
+    """Read and map the NFC chip errors to HTTP responses."""
+    try:
+        datos_cedula = leer_cedula(
+            run=run_visitante,
+            fecha_nacimiento=fecha_nacimiento,
+            fecha_vencimiento=fecha_vencimiento,
+        )
+    except ReaderNotDetectedException:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="NFC reader not detected. Check USB connection and drivers.",
+        ) from None
+    except CardNotDetectedException:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No card in reader. Place identity card on reader.",
+        ) from None
+    except BACFailedException:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="BAC authentication failed. Verify the document MRZ data.",
+        ) from None
+    except PACERequiredException:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="This identity card requires PACE authentication with its CAN.",
+        ) from None
+    except InvalidCardException:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid card format (not ICAO 9303 compatible).",
+        ) from None
+
+    return LeerCedulaDatosResponse(
+        run=datos_cedula.run,
+        nombre_completo=datos_cedula.nombre_completo,
+        fecha_nacimiento=datos_cedula.fecha_nacimiento,
+        foto_disponible=datos_cedula.foto_bytes is not None,
+    )
 
 
 def _leer_y_registrar(
@@ -70,33 +124,11 @@ def _leer_y_registrar(
             detail="Resident does not belong to the specified department",
         )
 
-    # Read chip
-    try:
-        datos_cedula = leer_cedula(
-            run=request.run_visitante,
-            fecha_nacimiento=request.fecha_nacimiento,
-            fecha_vencimiento=request.fecha_vencimiento,
-        )
-    except ReaderNotDetectedException:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="NFC reader not detected. Check USB connection and drivers.",
-        ) from None
-    except CardNotDetectedException:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No card in reader. Place identity card on reader.",
-        ) from None
-    except BACFailedException:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="BAC authentication failed. Verify card data.",
-        ) from None
-    except InvalidCardException:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid card format (not ICAO 9303 compatible).",
-        ) from None
+    datos_cedula = _leer_cedula_desde_chip(
+        request.run_visitante,
+        request.fecha_nacimiento,
+        request.fecha_vencimiento,
+    )
 
     # Register visit with chip data
     visita = Visita(
@@ -106,7 +138,7 @@ def _leer_y_registrar(
         departamento_id=request.departamento_destino_id,
         residente_destino_id=request.residente_destino_id,
         motivo=request.motivo,
-        foto_visitante=datos_cedula.foto_bytes,
+        foto_visitante=None,
         conserje_registrador_id=conserje.id,
         notas=request.notas or "Registrado via lectura NFC",
     )
@@ -119,7 +151,7 @@ def _leer_y_registrar(
         run=datos_cedula.run,
         nombre_completo=datos_cedula.nombre_completo,
         fecha_nacimiento=datos_cedula.fecha_nacimiento,
-        foto_disponible=datos_cedula.foto_bytes is not None,
+        foto_disponible=datos_cedula.foto_disponible,
         visita_id=visita.id,
         timestamp_registro=visita.timestamp_ingreso.isoformat(),
     )
@@ -142,6 +174,20 @@ async def leer_cedula_y_registrar_visita(
         conserje=conserje,
         db=db,
     )
+
+
+@router.post("/leer", response_model=LeerCedulaDatosResponse)
+async def leer_cedula_para_formulario(
+    run_visitante: str = Form(...),
+    fecha_nacimiento: str = Form(...),
+    fecha_vencimiento: str = Form(...),
+    can: str | None = Form(default=None),
+    conserje: Conserje = Depends(get_current_conserje),
+) -> LeerCedulaDatosResponse:
+    """Read identity data to populate the NFC form without creating a visit."""
+    del conserje
+    del can
+    return _leer_cedula_desde_chip(run_visitante, fecha_nacimiento, fecha_vencimiento)
 
 
 @router.post("/procesar", response_model=LeerCedulaResponse)
